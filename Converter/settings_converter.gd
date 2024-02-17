@@ -233,6 +233,8 @@ func _on_begin_pressed():
 
 func convertTimelinePrep():
 	for item in timelineFolderBreakdown:
+		var folderPath = timelineFolderBreakdown[item]
+		var jsonData = {}
 		var file := FileAccess.open("res://dialogic/timelines/" + item, FileAccess.READ)
 		var fileContent = file.get_as_text()
 		var json_object = JSON.new()
@@ -244,7 +246,27 @@ func convertTimelinePrep():
 			timelineKeys[item] = fileName
 		else:
 			%OutputLog.text += "[color=red]There was a problem parsing this file while prepping![/color]\r\n"
+		%OutputLog.text += "Timeline " + folderPath + item +": "
+		
+		if error == OK:
+			contents = json_object.get_data()
+			var fileName = contents["metadata"]["name"]
+			%OutputLog.text += "Name: " + fileName + ", " + str(contents["events"].size()) + " timeline events\n"
 
+			var dir_timelines = conversionRootFolder + "/timelines"
+			if not DirAccess.dir_exists_absolute(dir_timelines + folderPath):
+				var directory = DirAccess.open(dir_timelines)
+				if not DirAccess.dir_exists_absolute(dir_timelines):
+					DirAccess.make_dir_absolute(dir_timelines)
+			var processedEvents = 0
+			for event in contents["events"]:
+				processedEvents += 1
+				if "dialogic_" in event["event_id"]:
+					match event["event_id"]:
+						"dialogic_015":
+							#Label event
+							anchorNames[event['id']] = event['name']
+						
 
 func convertTimelines():
 	convertTimelinePrep()
@@ -293,47 +315,69 @@ func convertTimelines():
 
 			var processedEvents = 0
 
-
+#region depth subsystem
 			var depth = []
+			var questionOrConditionTotal:int = 0
 			for event in contents["events"]:
 				processedEvents += 1
 				var eventLine = ""
-
 				for i in depth:
-					eventLine += "	"
+					if event["event_id"] == "dialogic_011":
+						if depth[0] == "choice":
+							depth.pop_front()
+							eventLine += "	"
+						else:
+							eventLine += "	"
+					else:
+						eventLine += "	"
+#endregion
 
 				if "dialogic_" in event["event_id"]:
 					match event["event_id"]:
 						"dialogic_001":
 							#Text Event
+							var character_line = ""
 							var has_character:bool = false
 							if event['character'] != "" && event['character']:
 								has_character = true
-								eventLine += characterFolderBreakdown[event['character']]['searchable_name']
-
+								character_line = characterFolderBreakdown[event['character']]['searchable_name']
 								if event['portrait'] != "":
-									eventLine += "(" +  event['portrait'] + ")"
+									character_line += "(" + event['portrait'] + ")"
+								character_line += ": "
 
-								eventLine += ": "
 							if '\n' in event['text']:
-								var splitCount = 0
 								var split = event['text'].split('\n')
-								for splitItem in split:
+								var totalSplitCount = split.size()  # Determine total number of splits
+
+								 #Ensure there's a newline at the end of the file before adding new content
+								file.seek_end()  # Move to the end of the file
+								if file.get_position() > 0:
+									file.seek(file.get_position() - 1)
+									var last_char = file.get_8()
+									if last_char != 10:  # ASCII code for newline
+										file.store_line("")  # Add a newline if the last character isn't a newline
+
+								for splitIndex in range(totalSplitCount):
+									var splitItem = split[splitIndex]
 									if has_character == false && splitItem.find(' ') > 0 && splitItem.find(':') > 0 && (splitItem.find(' ') > splitItem.find(':')):
 										splitItem = splitItem.insert(splitItem.find(':'), "\\" )
-									if splitCount == 0:
-										file.store_line(eventLine + splitItem + "\\")
+									var lineToStore = splitItem
+									if splitIndex < totalSplitCount - 1:  # Add '\\' for all but the last split item
+										lineToStore += "\\"
+									if splitIndex == 0:
+										file.store_line(eventLine + character_line + lineToStore)  # For the first item, prepend character_line
 									else:
-										file.store_line(splitItem + "\\")
-									splitCount += 1
+										file.store_line(eventLine + lineToStore)  # Directly store subsequent items
 							else:
-								var text_line  = variableNameConversion(event['text'])
+								var text_line = variableNameConversion(event['text'])
 								if has_character == false && text_line.find(' ') > 0 && text_line.find(':') > 0 && (text_line.find(' ') > text_line.find(':')):
-										text_line = text_line.insert(text_line.find(':'), "\\" )
-								file.store_string(eventLine + text_line)
+									text_line = text_line.insert(text_line.find(':'), "\\" )
+								file.store_line(eventLine + character_line + text_line)  # Ensure it ends with a newline
+							#print("eventLine== ", eventLine)
+							#print ("branch depth now" + str(depth))
+
 						"dialogic_002":
 							# Character event
-
 							#For some reason this is loading as a float, and the match is failing. so hard casting as string
 							var eventType:String
 							if 'type' in event:
@@ -426,6 +470,7 @@ func convertTimelines():
 										eventLine += "leave "
 										if event['character'] == "[All]":
 											eventLine += "--All--"
+											file.store_string(eventLine)
 										else:
 											eventLine += characterFolderBreakdown[event['character']]['searchable_name']
 
@@ -447,6 +492,8 @@ func convertTimelines():
 						"dialogic_010":
 							# Question event
 							# With the change in 2.0, the root of the Question block is simply text event
+							questionOrConditionTotal += 1
+							
 							if event['character'] != "" && event['character']:
 								eventLine += characterFolderBreakdown[event['character']]['name']
 								if event['portrait'] != "":
@@ -465,39 +512,24 @@ func convertTimelines():
 							else:
 								file.store_string(eventLine + event['question'])
 
-							#depth.push_front("question")
+							depth.push_front("question")
+							file.store_string("LLL question")
 
 						"dialogic_011":
 							#Choice event
-
 							#Choice's in 1.x have depth, but they do not have matching End Nodes as Questions and Conditionals do
-							if depth.size() > 0:
-								if depth[0] == "choice":
-									#reset the tabs for this choice to be one tree up
-
-									if depth.size() == 1:
-										eventLine = ""
-									else:
-										for i in (depth.size() - 1):
-											eventLine = "	"
-
-							else:
-								#for the next line we want to add a depth
-
-								depth.push_front("choice")
-
-
+							
 							eventLine += "- "
 							eventLine += event['choice']
 
 							if 'value' in event:
 								if event['value'] != "":
 									var valueLookup = variableNameConversion("[" + definitionFolderBreakdown[event['definition']]['path'] + definitionFolderBreakdown[event['definition']]['name'] + "]" )
-
 									eventLine += " [if "
 									eventLine += valueLookup
 									if event['condition'] != "":
 										eventLine += " " + event['condition']
+										
 									else:
 										#default is true, so it may not store it
 										eventLine += " =="
@@ -511,11 +543,16 @@ func convertTimelines():
 									eventLine += "]"
 
 
+									
 							file.store_string(eventLine)
-							#print("choice node")
-							#print ("bracnh depth now" + str(depth))
+							depth.push_front("choice")
+							#print("eventLine== ", eventLine)
+							#print ("branch depth now" + str(depth))
+
 						"dialogic_012":
 							#If event
+							questionOrConditionTotal += 1
+							
 							var valueLookup = "broken variable"
 							if event.has('definition') and event['definition'] in definitionFolderBreakdown:
 								if definitionFolderBreakdown.size():
@@ -541,28 +578,33 @@ func convertTimelines():
 									eventLine += " \"" + event['value'] + "\""
 
 								eventLine += ":"
+								depth.push_front("condition")
 								file.store_string(eventLine)
 								#print("if branch node")
-								depth.push_front("condition")
+								
 							else:
 								# Handle the case where 'definition' key is missing or not in definitionFolderBreakdown
 								%OutputLog.text += "[color=red]Definition not found in event or definitionFolderBreakdown[/color]" + "\r\n"
-
-							#print ("bracnh depth now" + str(depth))
+							
+							#print("eventLine== ", eventLine)
+							#print ("branch depth now" + str(depth))
 						"dialogic_013":
 							#End Branch event
 							# doesnt actually make any lines, just adjusts the tab depth
 							#print("end branch node")
-
+							if questionOrConditionTotal >= depth.size():
+								var _popped = depth.pop_front()
 
 							var _popped = depth.pop_front()
+							#print("event== ", event)
 							#print ("bracnh depth now" + str(depth))
 						"dialogic_014":
 							#Set Value event
 							if varSubsystemInstalled:
 
 
-								eventLine += "VAR "
+								#eventLine += "VAR "
+								eventLine += "set "
 								if definitionFolderBreakdown.size():
 									eventLine += variableNameConversion("[" + definitionFolderBreakdown[event['definition']]['path'] + definitionFolderBreakdown[event['definition']]['name'] + "]" )
 								else:
@@ -580,31 +622,35 @@ func convertTimelines():
 
 										eventLine += "]"
 									else:
-										eventLine += event['set_value']
+										#eventLine += event['set_value']
+										eventLine +=  "'" + event['set_value'] + "'"
 								else:
-									eventLine +=  event['set_value']
+									#eventLine +=  event['set_value']
+									eventLine +=  "'" + event['set_value'] + "'"
 
 								file.store_string(eventLine)
 							else:
 								file.store_string(eventLine + "# Set variable function. Variables subsystem is disabled")
 						"dialogic_015":
 							#Label event
-							file.store_string(eventLine + "[label name=\"" + event['name'] +"\"]")
-							anchorNames[event['id']] = event['name']
+							file.store_string(eventLine + "label " + event['name'])
 						"dialogic_016":
 							#Goto event
 							# Dialogic 1.x only allowed jumping to labels in the same timeline
-							# But since it is stored as a ID reference, we will have to get it on the second pass
+							# But since it is stored as a ID reference, we get it on the preprocess pass
 
-							file.store_string(eventLine + "[jump label=<" + event['anchor_id'] +">]")
+							var label_name = event['anchor_id']
+							if anchorNames.has(label_name):
+								file.store_string(eventLine + "jump " + anchorNames[label_name])
 							#file.store_string(eventLine + "# jump label, just a comment for testing")
 						"dialogic_020":
 							#Change Timeline event
 							#first pass performed by convertTimelinePrep() for timelineKeys
+							
 							var jumpDictionaryKey = event['change_timeline']
 							if timelineKeys.has(jumpDictionaryKey):
 								file.store_string(eventLine + "jump " + timelineKeys[jumpDictionaryKey] + "/")
-
+								
 							#file.store_string(eventLine + "[jump timeline=<" + event['change_timeline'] +">]")
 							#file.store_string(eventLine + "# jump timeline, just a comment for testing")
 						"dialogic_021":
@@ -661,20 +707,29 @@ func convertTimelines():
 							file.store_string(eventLine + "[signal arg=\"" + event['emit_signal'] +"\"]")
 						"dialogic_041":
 							#Change Scene event
-							file.store_string(eventLine + "# Change scene event is deprecated. Scene called was: " + event['change_scene'])
+							file.store_line(eventLine + "# Change scene event is deprecated. Scene called was: " + event['change_scene'])
+							file.store_line(eventLine + "# Use Signals or autoload func call to change scene. ie...")
+							file.store_line(eventLine + "# do auto.change_scene(\"" + event['change_scene'] + "\")")
+							file.store_line(eventLine + "# or [signal arg_type=\"dict\" arg=\"{\"method\":\"change_scene\",\"path\":\"" + event['change_scene'] + "\"}\"]")
 						"dialogic_042":
 							#Call Node event
-							eventLine += "[call_node path=\"" + event['call_node']['target_node_path'] + "\" "
-							eventLine += "method=\"" + event['call_node']['method_name'] + "\" "
-							eventLine += "args=\"["
+							file.store_line("# Converted Call Node")
+							eventLine += "do " + event['call_node']['target_node_path'] + "."
+							eventLine += event['call_node']['method_name']
+							eventLine += ".("
+							var argNum:int = 0
 							for arg in event['call_node']['arguments']:
-								eventLine += "\"" + arg + "\", "
-
+								if argNum > 0:
+									eventLine += ", "
+								eventLine += "\"" + arg + "\""
+								argNum += 1
+								
 							#remove the last comma and space
-							eventLine = eventLine.left(-2)
+							#eventLine = eventLine.left(-2)
 
-							eventLine += "]\"]"
+							eventLine += ")"
 							file.store_string(eventLine)
+							
 						_:
 							file.store_string(eventLine + "# unimplemented Dialogic control with unknown number")
 
@@ -714,46 +769,37 @@ func convertTimelines():
 		regex.compile('(<.*?>)')
 		#var result = regex.search_all(oldText)
 
+# Initialize a variable to track if the last line was blank
+		var last_line_was_blank = false
 
-		var whitespaceCount = 0
 		while oldFile.get_position() < oldFile.get_length():
 			var line = oldFile.get_line()
+			var stripped_line = line.strip_edges()  # Strip leading and trailing whitespace
 
-			if line.length() == 0:
-				#clean up any extra whitespace so theres only one line betwen each command
-				whitespaceCount += 1
-				if whitespaceCount < 2:
-					newFile.store_string("\r\n\r\n")
+			if stripped_line.length() == 0:
+				# If the stripped line is blank, we check the last line status
+				if not last_line_was_blank:
+					# Add a newline for separation if the last line wasn't blank
+					newFile.store_string("\n")
+					last_line_was_blank = true  # Mark the current line as blank for the next iteration
 			else:
-				whitespaceCount = 0
+				# If the line has content, reset the last line tracker and process the line
+				last_line_was_blank = false  # Reset the blank line tracker
 
-				var result = regex.search_all(line)
+				# Process the line for any replacements while preserving original indentation
+				var result = regex.search_all(stripped_line)
 				if result:
 					for res in result:
 						var r_string = res.get_string()
-						var newString = r_string.substr(1,r_string.length()-2)
+						var newString = r_string.substr(1, r_string.length() - 2)
 
-						if "timeline" in line:
-							if newString in timelineFolderBreakdown.keys():
-								newString = "\"" + timelineFolderBreakdown[newString].replace(".cnv", ".dtl") + "\""
-						if "label" in line:
-							if newString in anchorNames.keys():
-								newString = "\"" + anchorNames[newString] + "\""
-						if "style" in line:
-							var prev = newString
-							var config = ConfigFile.new()
-							var error = config.load("res://dialogic/themes/" + newString)
-							if error == OK:
-								if config.has_section_key("settings", "name"):
-									newString = config.get_value("settings", "name")
+						# Perform your replacements here...
 
-							if newString == prev:
-								newString = "DefaultTheme"
+						stripped_line = stripped_line.replace(r_string, newString)
 
-						line = line.replace(r_string,newString)
-						newFile.store_string(line)
-				else:
-					newFile.store_string(line)
+				# Store the processed line, preserving original leading tabs or spaces for indentation
+				# Use 'line' instead of 'stripped_line' to keep the indentation
+				newFile.store_string(line.replace(stripped_line, stripped_line + "\n"))
 
 		oldFile = null
 
@@ -761,10 +807,8 @@ func convertTimelines():
 		var dir = DirAccess.open(fileDirectory)
 		dir.remove(timelineFolderBreakdown[item])
 
+
 		%OutputLog.text += "Completed conversion of file: " + timelineFolderBreakdown[item].replace(".cnv", ".dtl") + "\r\n"
-
-		#print(item)
-
 
 
 func convertCharacters():
