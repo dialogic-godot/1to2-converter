@@ -117,14 +117,18 @@ func _on_verify_pressed():
 
 	if definitionsFile:
 		for variable in definitionsFile["variables"]:
-			var varPath = definitionFolderBreakdown[variable["id"]]
-			var variableInfo = {}
-			variableInfo["type"] = "variable"
-			variableInfo["path"] = varPath
-			variableInfo["name"] = variable["name"]
-			variableInfo["value"] = variable["value"]
-			definitionFolderBreakdown[variable["id"]] = variableInfo
-
+			if variable['id'] in definitionFolderBreakdown:
+				var varPath = definitionFolderBreakdown[variable["id"]]
+				var variableInfo = {}
+				variableInfo["type"] = "variable"
+				variableInfo["path"] = varPath
+				variableInfo["name"] = variable["name"]
+				variableInfo["value"] = variable["value"]
+				definitionFolderBreakdown[variable["id"]] = variableInfo
+			else:
+				printerr("Missing variable ID " + variable['id'] + " in definitionsFolderBreakdown")
+				%OutputLog.text += "[color=red]Missing variable ID [/color]" +  variable['id'] + " [color=red]in definitionsFolderBreakdown[/color] \r\n"
+				
 		for variable in definitionsFile["glossary"]:
 			var varPath = definitionFolderBreakdown[variable["id"]]
 			var variableInfo = {}
@@ -340,10 +344,14 @@ func convertTimelines():
 							var has_character:bool = false
 							if event['character'] != "" && event['character']:
 								has_character = true
-								character_line = characterFolderBreakdown[event['character']]['searchable_name']
-								if event['portrait'] != "":
-									character_line += "(" + event['portrait'] + ")"
-								character_line += ": "
+								if characterFolderBreakdown.has(event['character']): # added check for Character
+									character_line = characterFolderBreakdown[event['character']]['searchable_name']
+									if event['portrait'] != "":
+										character_line += "(" + event['portrait'] + ")"
+									character_line += ": "
+								else:
+									file.store_string(eventLine + "# Character event error here! == " + event['character'] + " missing @fileName= " + fileName)
+									%OutputLog.text += "[color=red] Character event error at Text Event! Character== %s [/color]" % [event['character']] + " Text== " + event['text'] + " [color=red]fileName= [/color]" + fileName +"\r\n"
 
 							if '\n' in event['text']:
 								var split = event['text'].split('\n')
@@ -387,38 +395,64 @@ func convertTimelines():
 
 							match eventType:
 								"0":
-									if event['character'] != "":
-										eventLine += "join "
-										eventLine += characterFolderBreakdown[event['character']]['searchable_name']
-										if (event['portrait'] != ""):
-											eventLine += " (" + event['portrait'] + ") "
+									if event.has('character'): # checks if character exists
+										var character = event['character']
+										if character == "[All]":
+											var error_message = "Join error!  All characters called and is not implemented."
+											file.store_string("# %s %s eventLine= %s fileName= %s" % [eventLine, error_message, eventLine, fileName])
+											%OutputLog.text += "[color=red]%s[/color] eventLine= %s @fileName= %s \r\n" % [error_message, eventLine, fileName]
+											file.store_string(eventLine)
+											
+										elif not characterFolderBreakdown.has(character):
+											printerr(event['character'], "is not in characterFolderBreakdown:")
+											var error_message = "Join error! Non-existing character called == " + character
+											file.store_string("# %s %s eventLine= %s fileName= %s" % [eventLine, error_message, eventLine, fileName])
+											%OutputLog.text += "[color=red]join error! Converter found invalid character index here[/color] " + "eventLine= " + eventLine + " @fileName= " + fileName +"\r\n"
+											file.store_string(eventLine)
+											
+										else:
+											eventLine += "join "
+												
+											eventLine += characterFolderBreakdown[event['character']]['searchable_name']
+											if (event['portrait'] != ""):
+												eventLine += " (" + event['portrait'] + ") "
 
-										for i in event['position']:
-											if event['position'][i] == true:
-												eventLine += str(i.to_int())
+											for i in event['position']:
+												if event['position'][i] == true:
+													eventLine += str(i.to_int())
 
-										if (event['animation'] != "[Default]" && event['animation'] != "") || ('z_index' in event) || ('mirror_portrait' in event):
-											# Note: due to Anima changes, animations will be converted into a default. Times and wait will be perserved
-											eventLine += " ["
-											if ('animation' in event && event['animation'] != "[Default]" && event['animation'] != ""):
-												eventLine += " [animation=\"Instant In Or Out\" "
-												eventLine += "length=\"" +  str(event['animation_length']) + "\""
-												if "animation_wait" in event:
-													eventLine += " wait=\"true\""
+											if (event['animation'] != "[Default]" && event['animation'] != "") || ('z_index' in event) || ('mirror_portrait' in event):
+												# Note: due to Anima changes, animations will be converted into a default. Times and wait will be perserved
+												eventLine += " ["
+												if ('animation' in event && event['animation'] != "[Default]" && event['animation'] != ""):
+													eventLine += " [animation=\"Instant In Or Out\" "
+													eventLine += "length=\"" +  str(event['animation_length']) + "\""
+													if "animation_wait" in event:
+														eventLine += " wait=\"true\""
 
-											if 'z_index' in event:
-												if event['z_index'] != 0:
-													eventLine += ' z-index="' + str(event['z_index']) + '"'
-											if 'mirror_portrait' in event:
-												if event['mirror_portrait']:
-													eventLine += ' mirrored="true"'
+												if 'z_index' in event:
+													if event['z_index'] != 0:
+														eventLine += ' z-index="' + str(event['z_index']) + '"'
+												if 'mirror_portrait' in event:
+													if event['mirror_portrait']:
+														eventLine += ' mirrored="true"'
 
-											eventLine += "]"
+												eventLine += "]"
 
-										file.store_string(eventLine)
+
+											file.store_string(eventLine)
 									else:
-										eventLine += "# Character join event that did not have a selected character"
-										file.store_string(eventLine)
+										var character = event.get('character', "")
+										if character != "":
+											# The 'character' key exists and has a non-empty value
+											# Proceed with further processing
+											printerr("character reference is missing== ", event.get('character'))
+											eventLine += "Character join event ERROR: 'character' selection is missing"
+											file.store_string(eventLine)
+										else:
+											printerr("ERROR: 'character' event dictionary is empty")
+											eventLine += "Character join event ERROR: 'character' selection is missing"
+											file.store_string(eventLine)
 								"2":
 									if event['character'] != "":
 										if event['character'] != "[All]":
@@ -461,6 +495,7 @@ func convertTimelines():
 											file.store_string(eventLine)
 										else:
 											file.store_string(eventLine + "# Update and Leave All not currently implemented")
+											printerr("ERROR on Leave ALL or update ALL")
 									else:
 										eventLine += "# Character Update event that did not have a selected character"
 										file.store_string(eventLine)
@@ -495,9 +530,13 @@ func convertTimelines():
 							questionOrConditionTotal += 1
 							
 							if event['character'] != "" && event['character']:
-								eventLine += characterFolderBreakdown[event['character']]['name']
-								if event['portrait'] != "":
-									eventLine += "(" +  event['portrait'] + ")"
+								if characterFolderBreakdown.has(event['character']): # Check if character exists
+									eventLine += characterFolderBreakdown[event['character']]['name']
+									if event['portrait'] != "":
+										eventLine += "(" +  event['portrait'] + ")"
+								else: # Character does not exist, outputs hint
+									file.store_string(eventLine + "# Character event error on Question Event! " + "question= " + event['question'] + " fileName= " + fileName)
+									%OutputLog.text += "[color=red] Character event error on Question Event! [/color]" + "question= " + event['question'] + " fileName= " + fileName +"\r\n"
 
 								eventLine += ": "
 							if '\n' in event['question']:
@@ -513,7 +552,6 @@ func convertTimelines():
 								file.store_string(eventLine + event['question'])
 
 							depth.push_front("question")
-							file.store_string("LLL question")
 
 						"dialogic_011":
 							#Choice event
@@ -582,9 +620,14 @@ func convertTimelines():
 								file.store_string(eventLine)
 								#print("if branch node")
 								
-							else:
+							else: 
 								# Handle the case where 'definition' key is missing or not in definitionFolderBreakdown
-								%OutputLog.text += "[color=red]Definition not found in event or definitionFolderBreakdown[/color]" + "\r\n"
+								if event.has('definition') == false:
+									%OutputLog.text += "[color=red]Definition not found in event[/color]" + "\r\n"
+								elif definitionFolderBreakdown.has(event['definition']) == false:
+									%OutputLog.text += "[color=red]Definition not found in definitionFolderBreakdown[/color]" + "\r\n"
+								else:
+									%OutputLog.text += "[color=red]Definition event error[/color]" + "\r\n"
 							
 							#print("eventLine== ", eventLine)
 							#print ("branch depth now" + str(depth))
@@ -605,30 +648,35 @@ func convertTimelines():
 
 								#eventLine += "VAR "
 								eventLine += "set "
-								if definitionFolderBreakdown.size():
-									eventLine += variableNameConversion("[" + definitionFolderBreakdown[event['definition']]['path'] + definitionFolderBreakdown[event['definition']]['name'] + "]" )
-								else:
-									eventLine += "{broken_variable}"
-
-								eventLine += " = "
-
-								if "set_random" in event:
-									if event['set_random'] == true:
-										eventLine += "[random=\"True\""
-										if "random_lower_limit" in event:
-											eventLine += " min=\"" + str(event['random_lower_limit']) + "\""
-										if "random_upper_limit" in event:
-											eventLine += " max=\"" + str(event['random_upper_limit']) + "\""
-
-										eventLine += "]"
+								if definitionFolderBreakdown.has(event['definition']):
+									
+									if definitionFolderBreakdown.size():
+										eventLine += variableNameConversion("[" + definitionFolderBreakdown[event['definition']]['path'] + definitionFolderBreakdown[event['definition']]['name'] + "]" )
 									else:
-										#eventLine += event['set_value']
-										eventLine +=  "'" + event['set_value'] + "'"
-								else:
-									#eventLine +=  event['set_value']
-									eventLine +=  "'" + event['set_value'] + "'"
+										eventLine += "{broken_variable}"
 
-								file.store_string(eventLine)
+									eventLine += " = "
+
+									if "set_random" in event:
+										if event['set_random'] == true:
+											eventLine += "[random=\"True\""
+											if "random_lower_limit" in event:
+												eventLine += " min=\"" + str(event['random_lower_limit']) + "\""
+											if "random_upper_limit" in event:
+												eventLine += " max=\"" + str(event['random_upper_limit']) + "\""
+
+											eventLine += "]"
+										else:
+											#eventLine += event['set_value']
+											eventLine +=  "'" + event['set_value'] + "'"
+									else:
+										#eventLine +=  event['set_value']
+										eventLine +=  "'" + event['set_value'] + "'"
+
+									file.store_string(eventLine)
+								else:
+									%OutputLog.text += "[color=red]Definition not found in event or definitionFolderBreakdown[/color]" + "\r\n"
+									printerr("Definition not found in event or definitionFolderBreakdown= ", fileName)
 							else:
 								file.store_string(eventLine + "# Set variable function. Variables subsystem is disabled")
 						"dialogic_015":
@@ -759,12 +807,13 @@ func convertTimelines():
 	%OutputLog.text += "\r\n"
 
 	#second pass
+	print("SECOND PASS executing")
 	for item in timelineFolderBreakdown:
 		%OutputLog.text += "Verifying file: " + timelineFolderBreakdown[item] + "\r\n"
 
 		var oldFile = FileAccess.open(timelineFolderBreakdown[item], FileAccess.READ)
 		var newFile = FileAccess.open(timelineFolderBreakdown[item].replace(".cnv", ".dtl"), FileAccess.WRITE)
-
+		
 		var regex = RegEx.new()
 		regex.compile('(<.*?>)')
 		#var result = regex.search_all(oldText)
@@ -1097,7 +1146,12 @@ func convertSettings():
 
 	ProjectSettings.set_setting('dialogic/text/autocolor_names', config.get_value("dialog", "auto_color_names", true))
 	ProjectSettings.set_setting('dialogic/choices/autofocus_first', config.get_value("input", "autofocus_choices", false))
-	ProjectSettings.set_setting('dialogic/choices/delay', config.get_value("input", "delay_after_options", 0.2))
+	var delay_setting_convert = config.get_value("input", "delay_after_options", 0.2)
+	if typeof(delay_setting_convert) == 4: # checks if 1.x setting is string, if so, converts it to int
+		delay_setting_convert.to_int()
+		ProjectSettings.set_setting('dialogic/choices/delay', config.get_value("input", "delay_after_options", delay_setting_convert))
+	else:
+		ProjectSettings.set_setting('dialogic/choices/delay', config.get_value("input", "delay_after_options", 0.2))
 	ProjectSettings.save()
 
 
