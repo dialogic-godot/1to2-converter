@@ -350,8 +350,8 @@ func convertTimelines():
 										character_line += "(" + event['portrait'] + ")"
 									character_line += ": "
 								else:
-									file.store_string(eventLine + "# Character event error here! == " + event['character'] + " missing @fileName= " + fileName)
-									%OutputLog.text += "[color=red] Character event error at Text Event! Character== %s [/color]" % [event['character']] + " Text== " + event['text'] + " [color=red]fileName= [/color]" + fileName +"\r\n"
+									file.store_string(eventLine + "# Character event error here! " + event['character'] + " missing at timeline: " + fileName + " \n")
+									%OutputLog.text += "[color=red] Character event error at Text Event! Character== %s [/color]" % [event['character']] + " Text== " + event['text'] + " [color=yellow] timeline: [/color]" + fileName +"\r\n"
 
 							if '\n' in event['text']:
 								var split = event['text'].split('\n')
@@ -399,15 +399,15 @@ func convertTimelines():
 										var character = event['character']
 										if character == "[All]":
 											var error_message = "Join error!  All characters called and is not implemented."
-											file.store_string("# %s %s eventLine= %s fileName= %s" % [eventLine, error_message, eventLine, fileName])
-											%OutputLog.text += "[color=red]%s[/color] eventLine= %s @fileName= %s \r\n" % [error_message, eventLine, fileName]
+											file.store_string("# %s %s at timeline: %s" % [eventLine, error_message, fileName])
+											%OutputLog.text += "[color=red]%s[/color] at timeline: %s \r\n" % [error_message, fileName]
 											file.store_string(eventLine)
 											
 										elif not characterFolderBreakdown.has(character):
 											printerr(event['character'], "is not in characterFolderBreakdown:")
 											var error_message = "Join error! Non-existing character called == " + character
-											file.store_string("# %s %s eventLine= %s fileName= %s" % [eventLine, error_message, eventLine, fileName])
-											%OutputLog.text += "[color=red]join error! Converter found invalid character index here[/color] " + "eventLine= " + eventLine + " @fileName= " + fileName +"\r\n"
+											file.store_string("# %s %s fileName= %s" % [eventLine, error_message, fileName])
+											%OutputLog.text += "[color=red]join error! Converter found invalid character index here[/color] " + " at timeline: " + fileName +"\r\n"
 											file.store_string(eventLine)
 											
 										else:
@@ -535,8 +535,8 @@ func convertTimelines():
 									if event['portrait'] != "":
 										eventLine += "(" +  event['portrait'] + ")"
 								else: # Character does not exist, outputs hint
-									file.store_string(eventLine + "# Character event error on Question Event! " + "question= " + event['question'] + " fileName= " + fileName)
-									%OutputLog.text += "[color=red] Character event error on Question Event! [/color]" + "question= " + event['question'] + " fileName= " + fileName +"\r\n"
+									file.store_string(eventLine + "# Character event error on Question Event! " + "question= " + event['question'] + " timeline: " + fileName)
+									%OutputLog.text += "[color=red] Character event error on Question Event! [/color]" + "question= " + event['question'] + " timeline: " + fileName +"\r\n"
 
 								eventLine += ": "
 							if '\n' in event['question']:
@@ -807,7 +807,6 @@ func convertTimelines():
 	%OutputLog.text += "\r\n"
 
 	#second pass
-	print("SECOND PASS executing")
 	for item in timelineFolderBreakdown:
 		%OutputLog.text += "Verifying file: " + timelineFolderBreakdown[item] + "\r\n"
 
