@@ -469,7 +469,7 @@ func convertTimelines():
 
 													if event['position'][i] == true:
 														positionCheck = true
-														eventLine += str(i.to_int())
+														eventLine += " " + str(i.to_int())
 
 											if !positionCheck:
 												eventLine += " 0"
@@ -764,7 +764,7 @@ func convertTimelines():
 							file.store_line("# Converted Call Node")
 							eventLine += "do " + event['call_node']['target_node_path'] + "."
 							eventLine += event['call_node']['method_name']
-							eventLine += ".("
+							eventLine += "("
 							var argNum:int = 0
 							for arg in event['call_node']['arguments']:
 								if argNum > 0:
