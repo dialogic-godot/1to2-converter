@@ -12,3 +12,6 @@ You can download the repository and simply put the "Converter" folder into your 
 - When the process finishes, temporarily switch away from the game engine and
 - return to finalize the process and view the converted files.
 - This ensures that the converted files become visible after the plugin operation. 
+
+# Credits
+Main contributors: [Exelia](https://github.com/exelia-antonov) and [MetaNoder](https://github.com/metanoder)!
